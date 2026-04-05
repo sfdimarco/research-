@@ -1,0 +1,600 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TurboQuant 3D â STCP Benchmark</title>
+    <style>
+        * { box-sizing: border-box; }
+        body { margin: 0; overflow: hidden; background: #000; color: #00ffcc; font-family: 'Courier New', monospace; }
+        canvas { display: block; }
+
+        #hud {
+            position: absolute; top: 15px; left: 15px;
+            background: rgba(0, 10, 15, 0.88);
+            padding: 16px 20px;
+            border: 1px solid #00ffcc44;
+            border-radius: 6px;
+            box-shadow: 0 0 20px rgba(0, 255, 204, 0.12);
+            min-width: 280px;
+            user-select: none;
+        }
+
+        .hud-title {
+            font-size: 11px; letter-spacing: 3px; text-transform: uppercase;
+            color: #00ffcc; margin: 0 0 12px 0; border-bottom: 1px solid #00ffcc33;
+            padding-bottom: 8px;
+        }
+
+        .hud-row {
+            display: flex; justify-content: space-between; align-items: center;
+            margin: 5px 0; font-size: 12px;
+        }
+        .hud-label { color: #667788; }
+        .hud-val   { color: #fff; font-weight: bold; }
+        .hud-val.good  { color: #00ffcc; }
+        .hud-val.warn  { color: #ffaa00; }
+        .hud-val.hot   { color: #ff4444; }
+
+        #mode-badge {
+            display: inline-block;
+            padding: 3px 10px; border-radius: 3px;
+            font-size: 11px; font-weight: bold; letter-spacing: 1px;
+            transition: all 0.2s;
+        }
+        .mode-on  { background: #00ffcc22; border: 1px solid #00ffcc; color: #00ffcc; }
+        .mode-off { background: #ff444422; border: 1px solid #ff4444; color: #ff4444; }
+
+        .divider {
+            border: none; border-top: 1px solid #00ffcc22;
+            margin: 10px 0;
+        }
+
+        #hint {
+            font-size: 10px; color: #445566; margin-top: 10px;
+            letter-spacing: 1px;
+        }
+
+        /* Benchmark history panel */
+        #bench-panel {
+            position: absolute; top: 15px; right: 15px;
+            background: rgba(0, 10, 15, 0.88);
+            border: 1px solid #00ffcc44; border-radius: 6px;
+            padding: 14px 18px; min-width: 260px;
+            box-shadow: 0 0 20px rgba(0, 255, 204, 0.08);
+        }
+        .bench-title {
+            font-size: 10px; letter-spacing: 3px; color: #00ffcc88;
+            margin: 0 0 10px 0; text-transform: uppercase;
+        }
+        .bench-row {
+            display: flex; justify-content: space-between;
+            font-size: 11px; margin: 4px 0;
+        }
+        .bench-lbl  { color: #556677; }
+        .bench-stat { color: #aabbcc; }
+        .bench-stat.highlight { color: #00ffcc; font-weight: bold; }
+
+        #graph-canvas {
+            width: 100%; height: 60px; display: block; margin-top: 8px;
+            border: 1px solid #00ffcc22; border-radius: 3px;
+        }
+
+        #loading {
+            position: absolute; top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 18px; letter-spacing: 4px; color: #00ffcc;
+        }
+    </style>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+</head>
+<body>
+    <div id="loading">INITIALIZING UNIVERSE...</div>
+
+    <!-- Left HUD: Live stats -->
+    <div id="hud">
+        <p class="hud-title">// STCP Benchmark :: QJL v1</p>
+
+        <div class="hud-row">
+            <span class="hud-label">QJL MODE</span>
+            <span id="mode-badge" class="mode-on">ON</span>
+        </div>
+
+        <hr class="divider">
+
+        <div class="hud-row">
+            <span class="hud-label">Particles</span>
+            <span class="hud-val" id="p-count">8,000</span>
+        </div>
+        <div class="hud-row">
+            <span class="hud-label">FPS</span>
+            <span class="hud-val good" id="fps-val">â</span>
+        </div>
+        <div class="hud-row">
+            <span class="hud-label">Force Time (now)</span>
+            <span class="hud-val" id="force-now">â</span>
+        </div>
+        <div class="hud-row">
+            <span class="hud-label">Force Time (avg 60f)</span>
+            <span class="hud-val" id="force-avg">â</span>
+        </div>
+
+        <hr class="divider">
+
+        <div class="hud-row">
+            <span class="hud-label">Total KE</span>
+            <span class="hud-val" id="ke-val">â</span>
+        </div>
+        <div class="hud-row">
+            <span class="hud-label">KE Drift (vs frame 1)</span>
+            <span class="hud-val" id="ke-drift">â</span>
+        </div>
+
+        <p id="hint">[ Q ] toggle QJL &nbsp;|&nbsp; [ R ] reset stats</p>
+    </div>
+
+    <!-- Right panel: Comparison history -->
+    <div id="bench-panel">
+        <p class="bench-title">// Benchmark History</p>
+
+        <div class="bench-row">
+            <span class="bench-lbl">QJL ON â avg force time</span>
+            <span class="bench-stat highlight" id="hist-on">â</span>
+        </div>
+        <div class="bench-row">
+            <span class="bench-lbl">QJL OFF â avg force time</span>
+            <span class="bench-stat highlight" id="hist-off">â</span>
+        </div>
+        <div class="bench-row">
+            <span class="bench-lbl">Speedup factor</span>
+            <span class="bench-stat highlight" id="speedup">â</span>
+        </div>
+        <div class="bench-row">
+            <span class="bench-lbl">QJL ON â KE drift</span>
+            <span class="bench-stat" id="hist-ke-on">â</span>
+        </div>
+        <div class="bench-row">
+            <span class="bench-lbl">QJL OFF â KE drift</span>
+            <span class="bench-stat" id="hist-ke-off">â</span>
+        </div>
+
+        <canvas id="graph-canvas"></canvas>
+        <div style="font-size:9px; color:#334455; margin-top:4px; letter-spacing:1px;">
+            CYAN = QJL ON &nbsp; RED = QJL OFF &nbsp; (force ms, last 200 frames)
+        </div>
+    </div>
+
+    <div id="canvas-container"></div>
+
+    <script>
+    window.onload = function () {
+        document.getElementById('loading').style.display = 'none';
+
+        // ââ SIMULATION CONSTANTS ââââââââââââââââââââââââââââââââââââ
+        const NUM_PARTICLES = 8000;
+        const STRIDE = 7; // [x, y, z, vx, vy, vz, mass]
+        const particles = new Float32Array(NUM_PARTICLES * STRIDE);
+
+        // QJL parameters
+        let QJL_ENABLED = true;
+        const QUANT_LEVEL = 20.0;
+        const QUANT_ANGLE = 0.1; // radians
+
+        // ââ THREE.JS SETUP ââââââââââââââââââââââââââââââââââââââââââ
+        const container = document.getElementById('canvas-container');
+        const scene = new THREE.Scene();
+        scene.fog = new THREE.FogExp2(0x000000, 0.0004);
+
+        const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 1, 10000);
+        camera.position.set(0, 400, 1000);
+        camera.lookAt(0, 0, 0);
+
+        const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance' });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        container.appendChild(renderer.domElement);
+
+        const geometry = new THREE.BufferGeometry();
+        const positions = new Float32Array(NUM_PARTICLES * 3);
+        const colors    = new Float32Array(NUM_PARTICLES * 3);
+        geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+        geometry.setAttribute('color',    new THREE.BufferAttribute(colors, 3));
+
+        const material = new THREE.PointsMaterial({
+            size: 3.0, vertexColors: true,
+            blending: THREE.AdditiveBlending,
+            transparent: true, opacity: 0.88, depthWrite: false,
+        });
+        const pointCloud = new THREE.Points(geometry, material);
+        scene.add(pointCloud);
+
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        // ââ PHYSICS CORE ââââââââââââââââââââââââââââââââââââââââââââ
+        const UniverseCore = (() => {
+            const G          = 1.2;
+            const THETA      = 0.7;
+            const SOFTENING  = 50.0;
+            const TREE_BOUNDS = 3000;
+            const stack = new Array(512);
+
+            class OctNode {
+                constructor(x, y, z, size) {
+                    this.x = x; this.y = y; this.z = z; this.size = size;
+                    this.mass = 0; this.comX = 0; this.comY = 0; this.comZ = 0;
+                    this.pIdx = -1; this.children = null;
+                }
+            }
+
+            function insert(node, pIdx, px, py, pz, pmass) {
+                let newMass = node.mass + pmass;
+                node.comX = (node.comX * node.mass + px * pmass) / newMass;
+                node.comY = (node.comY * node.mass + py * pmass) / newMass;
+                node.comZ = (node.comZ * node.mass + pz * pmass) / newMass;
+                node.mass = newMass;
+
+                if (!node.children && node.pIdx === -1) { node.pIdx = pIdx; return; }
+
+                if (!node.children) {
+                    let hs = node.size / 2;
+                    node.children = [
+                        new OctNode(node.x - hs, node.y - hs, node.z - hs, hs),
+                        new OctNode(node.x + hs, node.y - hs, node.z - hs, hs),
+                        new OctNode(node.x - hs, node.y + hs, node.z - hs, hs),
+                        new OctNode(node.x + hs, node.y + hs, node.z - hs, hs),
+                        new OctNode(node.x - hs, node.y - hs, node.z + hs, hs),
+                        new OctNode(node.x + hs, node.y - hs, node.z + hs, hs),
+                        new OctNode(node.x - hs, node.y + hs, node.z + hs, hs),
+                        new OctNode(node.x + hs, node.y + hs, node.z + hs, hs),
+                    ];
+                    let oldIdx  = node.pIdx; node.pIdx = -1;
+                    let oldX = particles[oldIdx * STRIDE], oldY = particles[oldIdx * STRIDE + 1],
+                        oldZ = particles[oldIdx * STRIDE + 2], oldM = particles[oldIdx * STRIDE + 6];
+                    if (Math.abs(px - oldX) < 0.1 && Math.abs(py - oldY) < 0.1 && Math.abs(pz - oldZ) < 0.1) {
+                        px += (Math.random() - 0.5) * 2;
+                        py += (Math.random() - 0.5) * 2;
+                        pz += (Math.random() - 0.5) * 2;
+                    }
+                    insertIntoChild(node, oldIdx, oldX, oldY, oldZ, oldM);
+                }
+                insertIntoChild(node, pIdx, px, py, pz, pmass);
+            }
+
+            function insertIntoChild(node, pIdx, px, py, pz, pmass) {
+                let idx = 0;
+                if (px >= node.x) idx |= 1;
+                if (py >= node.y) idx |= 2;
+                if (pz >= node.z) idx |= 4;
+                insert(node.children[idx], pIdx, px, py, pz, pmass);
+            }
+
+            return {
+                buildTree: () => {
+                    let root = new OctNode(0, 0, 0, TREE_BOUNDS);
+                    for (let i = 0; i < NUM_PARTICLES; i++) {
+                        let idx = i * STRIDE;
+                        insert(root, i, particles[idx], particles[idx+1], particles[idx+2], particles[idx+6]);
+                    }
+                    return root;
+                },
+
+                // ââ FORCE WITH QJL (spherical quantization) ââââââââââ
+                computeForcesQJL: (root) => {
+                    for (let i = 0; i < NUM_PARTICLES; i++) {
+                        let idx = i * STRIDE;
+                        let px = particles[idx], py = particles[idx+1], pz = particles[idx+2];
+                        let fx = 0, fy = 0, fz = 0, stackPtr = 0;
+                        stack[stackPtr++] = root;
+
+                        while (stackPtr > 0) {
+                            let node = stack[--stackPtr];
+                            let dx = node.comX - px, dy = node.comY - py, dz = node.comZ - pz;
+                            let distSq = dx*dx + dy*dy + dz*dz;
+                            if (distSq < SOFTENING) distSq = SOFTENING;
+                            let dist = Math.sqrt(distSq);
+
+                            if (node.size / dist < THETA || (!node.children && node.pIdx !== -1 && node.pIdx !== i)) {
+                                // QJL: quantize spherical coordinates
+                                let q_rad = Math.round(dist / QUANT_LEVEL) * QUANT_LEVEL || QUANT_LEVEL;
+                                let theta = Math.acos(Math.max(-1, Math.min(1, dz / dist)));
+                                let phi   = Math.atan2(dy, dx);
+                                let q_theta = Math.round(theta / QUANT_ANGLE) * QUANT_ANGLE;
+                                let q_phi   = Math.round(phi   / QUANT_ANGLE) * QUANT_ANGLE;
+                                let force = (G * node.mass) / (q_rad * q_rad);
+                                let sinT  = Math.sin(q_theta);
+                                fx += force * sinT * Math.cos(q_phi);
+                                fy += force * sinT * Math.sin(q_phi);
+                                fz += force * Math.cos(q_theta);
+                            } else if (node.children) {
+                                for (let c = 0; c < 8; c++) stack[stackPtr++] = node.children[c];
+                            }
+                        }
+                        particles[idx+3] = (particles[idx+3] + fx) * 0.999;
+                        particles[idx+4] = (particles[idx+4] + fy) * 0.999;
+                        particles[idx+5] = (particles[idx+5] + fz) * 0.999;
+                    }
+                },
+
+                // ââ FORCE WITHOUT QJL (exact Cartesian direction) ââââ
+                computeForcesExact: (root) => {
+                    for (let i = 0; i < NUM_PARTICLES; i++) {
+                        let idx = i * STRIDE;
+                        let px = particles[idx], py = particles[idx+1], pz = particles[idx+2];
+                        let fx = 0, fy = 0, fz = 0, stackPtr = 0;
+                        stack[stackPtr++] = root;
+
+                        while (stackPtr > 0) {
+                            let node = stack[--stackPtr];
+                            let dx = node.comX - px, dy = node.comY - py, dz = node.comZ - pz;
+                            let distSq = dx*dx + dy*dy + dz*dz;
+                            if (distSq < SOFTENING) distSq = SOFTENING;
+                            let dist = Math.sqrt(distSq);
+
+                            if (node.size / dist < THETA || (!node.children && node.pIdx !== -1 && node.pIdx !== i)) {
+                                // EXACT: direct Cartesian force direction, full float precision
+                                let force = (G * node.mass) / distSq;
+                                fx += force * (dx / dist);
+                                fy += force * (dy / dist);
+                                fz += force * (dz / dist);
+                            } else if (node.children) {
+                                for (let c = 0; c < 8; c++) stack[stackPtr++] = node.children[c];
+                            }
+                        }
+                        particles[idx+3] = (particles[idx+3] + fx) * 0.999;
+                        particles[idx+4] = (particles[idx+4] + fy) * 0.999;
+                        particles[idx+5] = (particles[idx+5] + fz) * 0.999;
+                    }
+                },
+            };
+        })();
+
+        // ââ GALAXY INIT âââââââââââââââââââââââââââââââââââââââââââââ
+        function initGalaxy() {
+            for (let i = 0; i < NUM_PARTICLES; i++) {
+                let idx = i * STRIDE;
+                let radius = (Math.random() ** 1.5) * 600 + 20;
+                let angle  = Math.random() * Math.PI * 2;
+                let height = (Math.random() - 0.5) * (radius * 0.2);
+                let orbV   = Math.sqrt(300 / radius) * 4;
+                particles[idx]     = Math.cos(angle) * radius;
+                particles[idx + 1] = height;
+                particles[idx + 2] = Math.sin(angle) * radius;
+                particles[idx + 3] = Math.cos(angle + Math.PI / 2) * orbV;
+                particles[idx + 4] = (Math.random() - 0.5) * 2;
+                particles[idx + 5] = Math.sin(angle + Math.PI / 2) * orbV;
+                particles[idx + 6] = Math.random() * 2.0 + 0.5;
+            }
+        }
+
+        // ââ METRICS âââââââââââââââââââââââââââââââââââââââââââââââââ
+        const HISTORY_LEN   = 200;
+        const ROLLING_WINDOW = 60;
+
+        let frameCount      = 0;
+        let baselineKE      = null;   // KE at frame 1, set once per mode
+        let lastFrameTime   = performance.now();
+
+        // Rolling windows per mode
+        const timeSamples   = { on: [], off: [] };  // force ms per mode
+        const keDriftSamples= { on: [], off: [] };
+
+        // Committed averages (once we have enough data)
+        const committed = { on: null, off: null };
+        const committedKE = { on: null, off: null };
+
+        // Mini graph data (last HISTORY_LEN frames, both modes)
+        const graphData  = { on: new Array(HISTORY_LEN).fill(null), off: new Array(HISTORY_LEN).fill(null) };
+        let graphMaxVal  = 20; // dynamic max for y-scale
+
+        function computeKE() {
+            let ke = 0;
+            for (let i = 0; i < NUM_PARTICLES; i++) {
+                let idx = i * STRIDE;
+                let vx = particles[idx+3], vy = particles[idx+4], vz = particles[idx+5];
+                let m  = particles[idx+6];
+                ke += 0.5 * m * (vx*vx + vy*vy + vz*vz);
+            }
+            return ke;
+        }
+
+        function rollingAvg(arr) {
+            if (!arr.length) return null;
+            return arr.reduce((s, v) => s + v, 0) / arr.length;
+        }
+
+        // ââ GRAPH RENDERER âââââââââââââââââââââââââââââââââââââââââââ
+        const graphCanvas = document.getElementById('graph-canvas');
+        const gCtx        = graphCanvas.getContext('2d');
+
+        function drawGraph() {
+            const w = graphCanvas.offsetWidth;
+            const h = 60;
+            graphCanvas.width  = w;
+            graphCanvas.height = h;
+            gCtx.clearRect(0, 0, w, h);
+
+            // Dynamic y-scale
+            let maxSeen = 1;
+            [...graphData.on, ...graphData.off].forEach(v => { if (v !== null && v > maxSeen) maxSeen = v; });
+            graphMaxVal = maxSeen * 1.15;
+
+            function drawLine(data, color) {
+                gCtx.beginPath();
+                gCtx.strokeStyle = color;
+                gCtx.lineWidth = 1.5;
+                let first = true;
+                data.forEach((v, i) => {
+                    if (v === null) return;
+                    let x = (i / (HISTORY_LEN - 1)) * w;
+                    let y = h - (v / graphMaxVal) * (h - 4) - 2;
+                    if (first) { gCtx.moveTo(x, y); first = false; }
+                    else gCtx.lineTo(x, y);
+                });
+                gCtx.stroke();
+            }
+
+            drawLine(graphData.off, 'rgba(255, 80, 80, 0.7)');
+            drawLine(graphData.on,  'rgba(0, 255, 180, 0.7)');
+
+            // Y axis label
+            gCtx.fillStyle = '#334455';
+            gCtx.font = '9px Courier New';
+            gCtx.fillText(graphMaxVal.toFixed(1) + 'ms', 2, 10);
+        }
+
+        // ââ HUD ELEMENTS ââââââââââââââââââââââââââââââââââââââââââââ
+        const elMode     = document.getElementById('mode-badge');
+        const elFPS      = document.getElementById('fps-val');
+        const elForceNow = document.getElementById('force-now');
+        const elForceAvg = document.getElementById('force-avg');
+        const elKE       = document.getElementById('ke-val');
+        const elKEDrift  = document.getElementById('ke-drift');
+        const elHistOn   = document.getElementById('hist-on');
+        const elHistOff  = document.getElementById('hist-off');
+        const elSpeedup  = document.getElementById('speedup');
+        const elHKEOn    = document.getElementById('hist-ke-on');
+        const elHKEOff   = document.getElementById('hist-ke-off');
+
+        function updateHUD(forceMs, fps, ke, keDriftPct) {
+            const modeKey = QJL_ENABLED ? 'on' : 'off';
+
+            // Mode badge
+            elMode.textContent = QJL_ENABLED ? 'QJL ON' : 'EXACT';
+            elMode.className   = QJL_ENABLED ? 'mode-on' : 'mode-off';
+
+            // Live
+            elFPS.textContent      = fps.toFixed(0);
+            elFPS.className        = 'hud-val ' + (fps > 45 ? 'good' : fps > 25 ? 'warn' : 'hot');
+            elForceNow.textContent = forceMs.toFixed(2) + ' ms';
+            elForceNow.className   = 'hud-val ' + (forceMs < 8 ? 'good' : forceMs < 16 ? 'warn' : 'hot');
+
+            const avg = rollingAvg(timeSamples[modeKey].slice(-ROLLING_WINDOW));
+            elForceAvg.textContent = avg !== null ? avg.toFixed(2) + ' ms' : 'â';
+
+            elKE.textContent       = (ke / 1e6).toFixed(3) + ' M';
+            const driftStr         = keDriftPct !== null ? (keDriftPct >= 0 ? '+' : '') + keDriftPct.toFixed(2) + '%' : 'â';
+            elKEDrift.textContent  = driftStr;
+            elKEDrift.className    = 'hud-val ' + (Math.abs(keDriftPct || 0) < 1 ? 'good' : Math.abs(keDriftPct || 0) < 5 ? 'warn' : 'hot');
+
+            // History panel
+            if (committed.on !== null) {
+                elHistOn.textContent = committed.on.toFixed(2) + ' ms';
+            }
+            if (committed.off !== null) {
+                elHistOff.textContent = committed.off.toFixed(2) + ' ms';
+            }
+            if (committed.on !== null && committed.off !== null) {
+                const speedup = committed.off / committed.on;
+                elSpeedup.textContent = speedup.toFixed(2) + 'x';
+                elSpeedup.className   = 'bench-stat highlight ' + (speedup >= 1.05 ? 'good' : '');
+            }
+            if (committedKE.on !== null)  elHKEOn.textContent  = (committedKE.on  >= 0 ? '+' : '') + committedKE.on.toFixed(2)  + '%';
+            if (committedKE.off !== null) elHKEOff.textContent = (committedKE.off >= 0 ? '+' : '') + committedKE.off.toFixed(2) + '%';
+        }
+
+        // ââ KEYBOARD CONTROLS âââââââââââââââââââââââââââââââââââââââ
+        window.addEventListener('keydown', (e) => {
+            if (e.key === 'q' || e.key === 'Q') {
+                QJL_ENABLED = !QJL_ENABLED;
+                baselineKE  = null;   // reset baseline for new mode
+                frameCount  = 0;      // reset frame count for this mode session
+            }
+            if (e.key === 'r' || e.key === 'R') {
+                // Full reset
+                timeSamples.on.length  = 0;
+                timeSamples.off.length = 0;
+                keDriftSamples.on.length = 0;
+                keDriftSamples.off.length = 0;
+                committed.on = committed.off = null;
+                committedKE.on = committedKE.off = null;
+                graphData.on.fill(null);
+                graphData.off.fill(null);
+                baselineKE  = null;
+                frameCount  = 0;
+            }
+        });
+
+        // ââ ANIMATION LOOP ââââââââââââââââââââââââââââââââââââââââââ
+        function animate() {
+            const modeKey = QJL_ENABLED ? 'on' : 'off';
+
+            // Build tree
+            let root = UniverseCore.buildTree();
+
+            // Timed force computation
+            let t0 = performance.now();
+            if (QJL_ENABLED) UniverseCore.computeForcesQJL(root);
+            else             UniverseCore.computeForcesExact(root);
+            let forceMs = performance.now() - t0;
+
+            // KE
+            let ke = computeKE();
+            if (baselineKE === null && frameCount > 0) baselineKE = ke;
+            let keDriftPct = baselineKE ? ((ke - baselineKE) / baselineKE) * 100 : null;
+
+            // Record samples
+            timeSamples[modeKey].push(forceMs);
+            if (timeSamples[modeKey].length > HISTORY_LEN) timeSamples[modeKey].shift();
+            if (keDriftPct !== null) {
+                keDriftSamples[modeKey].push(keDriftPct);
+                if (keDriftSamples[modeKey].length > HISTORY_LEN) keDriftSamples[modeKey].shift();
+            }
+
+            // Graph data
+            graphData[modeKey].shift();
+            graphData[modeKey].push(forceMs);
+
+            // Commit average once we have ROLLING_WINDOW samples
+            if (timeSamples[modeKey].length >= ROLLING_WINDOW) {
+                committed[modeKey] = rollingAvg(timeSamples[modeKey].slice(-ROLLING_WINDOW));
+            }
+            if (keDriftSamples[modeKey].length >= ROLLING_WINDOW) {
+                committedKE[modeKey] = rollingAvg(keDriftSamples[modeKey].slice(-ROLLING_WINDOW));
+            }
+
+            // Integrate positions + sync WebGL
+            const posArr = pointCloud.geometry.attributes.position.array;
+            const colArr = pointCloud.geometry.attributes.color.array;
+            for (let i = 0; i < NUM_PARTICLES; i++) {
+                let sIdx = i * STRIDE, pIdx = i * 3;
+                particles[sIdx]     += particles[sIdx+3];
+                particles[sIdx + 1] += particles[sIdx+4];
+                particles[sIdx + 2] += particles[sIdx+5];
+                posArr[pIdx]     = particles[sIdx];
+                posArr[pIdx + 1] = particles[sIdx+1];
+                posArr[pIdx + 2] = particles[sIdx+2];
+                let speedSq = particles[sIdx+3]**2 + particles[sIdx+4]**2 + particles[sIdx+5]**2;
+                let heat = Math.min(1.0, speedSq * 0.05);
+                colArr[pIdx]     = heat;
+                colArr[pIdx + 1] = Math.max(0.2, 1.0 - heat);
+                colArr[pIdx + 2] = 1.0;
+            }
+            pointCloud.geometry.attributes.position.needsUpdate = true;
+            pointCloud.geometry.attributes.color.needsUpdate    = true;
+
+            scene.rotation.y += 0.001;
+            scene.rotation.z += 0.0005;
+            renderer.render(scene, camera);
+
+            // FPS
+            let now = performance.now();
+            let fps = 1000 / (now - lastFrameTime);
+            lastFrameTime = now;
+
+            updateHUD(forceMs, fps, ke, keDriftPct);
+            drawGraph();
+
+            frameCount++;
+            requestAnimationFrame(animate);
+        }
+
+        initGalaxy();
+        animate();
+    };
+    </script>
+</body>
+</html>
