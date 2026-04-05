@@ -1,0 +1,651 @@
+<!DOCTYPE html>
+
+<html lang="en">
+
+<head>
+
+    <meta charset="UTF-8">
+
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>TurboQuant 3D N-Body Universe</title>
+
+    <style>
+
+        body { margin: 0; overflow: hidden; background-color: #000; color: #00ffcc; font-family: monospace; }
+
+        canvas { display: block; }
+
+        #hud { position: absolute; top: 15px; left: 15px; background: rgba(0,20,10,0.8); padding: 15px; border: 1px solid #00ffcc; pointer-events: none; border-radius: 4px; box-shadow: 0 0 10px rgba(0, 255, 204, 0.2); }
+
+        h1 { margin: 0 0 10px 0; font-size: 16px; letter-spacing: 2px; text-transform: uppercase; }
+
+        p { margin: 5px 0; font-size: 12px; color: #aaa; }
+
+        .data { color: #fff; font-weight: bold; }
+
+        #loading { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font-size: 24px; }
+
+    </style>
+
+    <!-- Bring in Three.js for 3D rendering -->
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+
+</head>
+
+<body>
+
+    <div id="hud">
+
+        <h1>// Core.Sim.Octree.3D</h1>
+
+        <p>Particles: <span class="data" id="p-count">8,000</span></p>
+
+        <p>Architecture: <span class="data">7-Stride Buffer + 3D Octree</span></p>
+
+        <p>Heuristic: <span class="data">Spherical QJL Quantization</span></p>
+
+        <p>Renderer: <span class="data">Three.js WebGL Instancing</span></p>
+
+        <p>FPS: <span class="data" id="fps-counter">0</span></p>
+
+    </div>
+
+    
+
+    <div id="loading">INITIALIZING UNIVERSE...</div>
+
+    <div id="canvas-container"></div>
+
+
+
+    <script>
+
+        window.onload = function() {
+
+            document.getElementById('loading').style.display = 'none';
+
+
+
+            // --- SIMULATION CONSTANTS ---
+
+            // 8,000 is the sweet spot for a single JS thread before we need your WASM/SIMD backend
+
+            const NUM_PARTICLES = 8000;
+
+            const STRIDE = 7; // Mook's Spec: [x, y, z, vx, vy, vz, mass]
+
+            const particles = new Float32Array(NUM_PARTICLES * STRIDE);
+
+
+
+            // --- THREE.JS SETUP ---
+
+            const container = document.getElementById('canvas-container');
+
+            const scene = new THREE.Scene();
+
+            scene.fog = new THREE.FogExp2(0x000000, 0.0005);
+
+
+
+            const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 1, 10000);
+
+            camera.position.set(0, 400, 1000);
+
+            camera.lookAt(0, 0, 0);
+
+
+
+            const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: "high-performance" });
+
+            renderer.setSize(window.innerWidth, window.innerHeight);
+
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2)); // optimize for high-dpi
+
+            container.appendChild(renderer.domElement);
+
+
+
+            // --- BUFFER GEOMETRY FOR PARTICLES ---
+
+            const geometry = new THREE.BufferGeometry();
+
+            const positions = new Float32Array(NUM_PARTICLES * 3);
+
+            const colors = new Float32Array(NUM_PARTICLES * 3);
+
+            
+
+            geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+
+            geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+
+
+
+            const material = new THREE.PointsMaterial({
+
+                size: 3.5,
+
+                vertexColors: true,
+
+                blending: THREE.AdditiveBlending,
+
+                transparent: true,
+
+                opacity: 0.9,
+
+                depthWrite: false
+
+            });
+
+
+
+            const pointCloud = new THREE.Points(geometry, material);
+
+            scene.add(pointCloud);
+
+
+
+            window.addEventListener('resize', () => {
+
+                camera.aspect = window.innerWidth / window.innerHeight;
+
+                camera.updateProjectionMatrix();
+
+                renderer.setSize(window.innerWidth, window.innerHeight);
+
+            });
+
+
+
+            // --- THE 3D UNIVERSE CORE (Octree Math Engine) ---
+
+            const UniverseCore = (() => {
+
+                const G = 1.2;
+
+                const THETA = 0.7; // Barnes-Hut threshold
+
+                const SOFTENING = 50.0;
+
+                const QUANT_LEVEL = 20.0; // Bit-depth compression for radius (QJL Heuristic)
+
+                const TREE_BOUNDS = 3000; // Bounds of our universe
+
+
+
+                const stack = new Array(512); // Pre-allocated stack to avoid JS recursion limits
+
+
+
+                class OctNode {
+
+                    constructor(x, y, z, size) {
+
+                        this.x = x; this.y = y; this.z = z; this.size = size;
+
+                        this.mass = 0; this.comX = 0; this.comY = 0; this.comZ = 0;
+
+                        this.pIdx = -1;
+
+                        this.children = null; // Array of 8 if divided
+
+                    }
+
+                }
+
+
+
+                function insert(node, pIdx, px, py, pz, pmass) {
+
+                    // Update Center of Mass
+
+                    let newMass = node.mass + pmass;
+
+                    node.comX = (node.comX * node.mass + px * pmass) / newMass;
+
+                    node.comY = (node.comY * node.mass + py * pmass) / newMass;
+
+                    node.comZ = (node.comZ * node.mass + pz * pmass) / newMass;
+
+                    node.mass = newMass;
+
+
+
+                    if (!node.children && node.pIdx === -1) {
+
+                        node.pIdx = pIdx; // Empty leaf
+
+                        return;
+
+                    }
+
+
+
+                    if (!node.children) {
+
+                        let hs = node.size / 2;
+
+                        node.children = [
+
+                            new OctNode(node.x - hs, node.y - hs, node.z - hs, hs),
+
+                            new OctNode(node.x + hs, node.y - hs, node.z - hs, hs),
+
+                            new OctNode(node.x - hs, node.y + hs, node.z - hs, hs),
+
+                            new OctNode(node.x + hs, node.y + hs, node.z - hs, hs),
+
+                            new OctNode(node.x - hs, node.y - hs, node.z + hs, hs),
+
+                            new OctNode(node.x + hs, node.y - hs, node.z + hs, hs),
+
+                            new OctNode(node.x - hs, node.y + hs, node.z + hs, hs),
+
+                            new OctNode(node.x + hs, node.y + hs, node.z + hs, hs)
+
+                        ];
+
+
+
+                        let oldIdx = node.pIdx;
+
+                        node.pIdx = -1;
+
+                        
+
+                        let oldX = particles[oldIdx * STRIDE];
+
+                        let oldY = particles[oldIdx * STRIDE + 1];
+
+                        let oldZ = particles[oldIdx * STRIDE + 2];
+
+                        let oldMass = particles[oldIdx * STRIDE + 6];
+
+
+
+                        // Perturbation to avoid singularities/infinite nesting
+
+                        if (Math.abs(px - oldX) < 0.1 && Math.abs(py - oldY) < 0.1 && Math.abs(pz - oldZ) < 0.1) {
+
+                            px += (Math.random() - 0.5) * 2;
+
+                            py += (Math.random() - 0.5) * 2;
+
+                            pz += (Math.random() - 0.5) * 2;
+
+                        }
+
+                        insertIntoChild(node, oldIdx, oldX, oldY, oldZ, oldMass);
+
+                    }
+
+                    insertIntoChild(node, pIdx, px, py, pz, pmass);
+
+                }
+
+
+
+                function insertIntoChild(node, pIdx, px, py, pz, pmass) {
+
+                    let idx = 0;
+
+                    if (px >= node.x) idx |= 1;
+
+                    if (py >= node.y) idx |= 2;
+
+                    if (pz >= node.z) idx |= 4;
+
+                    insert(node.children[idx], pIdx, px, py, pz, pmass);
+
+                }
+
+
+
+                return {
+
+                    buildTree: () => {
+
+                        // Root node centered at 0,0,0
+
+                        let root = new OctNode(0, 0, 0, TREE_BOUNDS);
+
+                        for (let i = 0; i < NUM_PARTICLES; i++) {
+
+                            let idx = i * STRIDE;
+
+                            insert(root, i, particles[idx], particles[idx+1], particles[idx+2], particles[idx+6]);
+
+                        }
+
+                        return root;
+
+                    },
+
+
+
+                    computeForces: (root) => {
+
+                        for (let i = 0; i < NUM_PARTICLES; i++) {
+
+                            let idx = i * STRIDE;
+
+                            let px = particles[idx];
+
+                            let py = particles[idx+1];
+
+                            let pz = particles[idx+2];
+
+
+
+                            let fx = 0, fy = 0, fz = 0;
+
+                            let stackPtr = 0;
+
+                            stack[stackPtr++] = root;
+
+
+
+                            while (stackPtr > 0) {
+
+                                let node = stack[--stackPtr];
+
+                                
+
+                                let dx = node.comX - px;
+
+                                let dy = node.comY - py;
+
+                                let dz = node.comZ - pz;
+
+
+
+                                let distSq = dx*dx + dy*dy + dz*dz;
+
+                                if (distSq < SOFTENING) distSq = SOFTENING;
+
+                                let dist = Math.sqrt(distSq);
+
+
+
+                                if (node.size / dist < THETA || (!node.children && node.pIdx !== -1 && node.pIdx !== i)) {
+
+                                    let force = 0;
+
+                                    
+
+                                    // MOOK'S QJL HEURISTIC (Spherical Quantization for distant bodies)
+
+                                    if (node.size / dist < THETA) {
+
+                                        // Drop precision
+
+                                        let q_rad = Math.round(dist / QUANT_LEVEL) * QUANT_LEVEL;
+
+                                        if (q_rad === 0) q_rad = QUANT_LEVEL;
+
+                                        
+
+                                        let theta_angle = Math.acos(dz / dist);
+
+                                        let phi_angle = Math.atan2(dy, dx);
+
+                                        
+
+                                        // Quantize angles to 0.1 radians
+
+                                        let q_theta = Math.round(theta_angle / 0.1) * 0.1;
+
+                                        let q_phi = Math.round(phi_angle / 0.1) * 0.1;
+
+
+
+                                        force = (G * node.mass) / (q_rad * q_rad);
+
+                                        fx += force * Math.sin(q_theta) * Math.cos(q_phi);
+
+                                        fy += force * Math.sin(q_theta) * Math.sin(q_phi);
+
+                                        fz += force * Math.cos(q_theta);
+
+                                    } else {
+
+                                        // Exact precision for close nodes
+
+                                        force = (G * node.mass) / distSq;
+
+                                        fx += force * (dx / dist);
+
+                                        fy += force * (dy / dist);
+
+                                        fz += force * (dz / dist);
+
+                                    }
+
+                                } else if (node.children) {
+
+                                    for(let c=0; c<8; c++) {
+
+                                        stack[stackPtr++] = node.children[c];
+
+                                    }
+
+                                }
+
+                            }
+
+
+
+                            // Update velocities (Euler Integration)
+
+                            particles[idx+3] += fx;
+
+                            particles[idx+4] += fy;
+
+                            particles[idx+5] += fz;
+
+                            
+
+                            // Damping applied directly
+
+                            particles[idx+3] *= 0.999;
+
+                            particles[idx+4] *= 0.999;
+
+                            particles[idx+5] *= 0.999;
+
+                        }
+
+                    }
+
+                };
+
+            })();
+
+
+
+            // --- GALAXY INITIALIZATION ---
+
+            function initGalaxy() {
+
+                for (let i = 0; i < NUM_PARTICLES; i++) {
+
+                    let idx = i * STRIDE;
+
+                    
+
+                    // Create a beautiful spiral/disk structure to start
+
+                    let radius = (Math.random() ** 1.5) * 600 + 20; 
+
+                    let angle = Math.random() * Math.PI * 2;
+
+                    let height = (Math.random() - 0.5) * (radius * 0.2); // Flatter disk
+
+                    
+
+                    let x = Math.cos(angle) * radius;
+
+                    let y = height;
+
+                    let z = Math.sin(angle) * radius;
+
+                    
+
+                    // Initial orbital velocity (cross product for spin)
+
+                    let orbitalVelocity = Math.sqrt(300 / radius) * 4;
+
+                    let vx = Math.cos(angle + Math.PI/2) * orbitalVelocity;
+
+                    let vy = (Math.random() - 0.5) * 2;
+
+                    let vz = Math.sin(angle + Math.PI/2) * orbitalVelocity;
+
+                    
+
+                    particles[idx]     = x;
+
+                    particles[idx + 1] = y;
+
+                    particles[idx + 2] = z;
+
+                    particles[idx + 3] = vx;
+
+                    particles[idx + 4] = vy;
+
+                    particles[idx + 5] = vz;
+
+                    particles[idx + 6] = Math.random() * 2.0 + 0.5; // Mass
+
+                }
+
+            }
+
+
+
+            // --- RENDER LOOP ---
+
+            let lastTime = performance.now();
+
+            const fpsCounter = document.getElementById('fps-counter');
+
+
+
+            function animate() {
+
+                // 1. Physics Engine
+
+                let root = UniverseCore.buildTree();
+
+                UniverseCore.computeForces(root);
+
+
+
+                // 2. Data Sync to WebGL Buffer
+
+                const posArray = pointCloud.geometry.attributes.position.array;
+
+                const colArray = pointCloud.geometry.attributes.color.array;
+
+
+
+                for (let i = 0; i < NUM_PARTICLES; i++) {
+
+                    let sIdx = i * STRIDE;
+
+                    let pIdx = i * 3;
+
+                    
+
+                    // Integrate Position
+
+                    particles[sIdx]     += particles[sIdx + 3];
+
+                    particles[sIdx + 1] += particles[sIdx + 4];
+
+                    particles[sIdx + 2] += particles[sIdx + 5];
+
+
+
+                    // Copy to WebGL
+
+                    posArray[pIdx]     = particles[sIdx];
+
+                    posArray[pIdx + 1] = particles[sIdx + 1];
+
+                    posArray[pIdx + 2] = particles[sIdx + 2];
+
+
+
+                    // Color based on velocity (Kinetic Energy)
+
+                    let speedSq = particles[sIdx+3]**2 + particles[sIdx+4]**2 + particles[sIdx+5]**2;
+
+                    let heat = Math.min(1.0, speedSq * 0.05);
+
+                    
+
+                    // Blue/Cyan core, red/hot high velocity
+
+                    colArray[pIdx]     = heat;                       // R
+
+                    colArray[pIdx + 1] = Math.max(0.2, 1.0 - heat);  // G
+
+                    colArray[pIdx + 2] = 1.0;                        // B
+
+                }
+
+
+
+                pointCloud.geometry.attributes.position.needsUpdate = true;
+
+                pointCloud.geometry.attributes.color.needsUpdate = true;
+
+
+
+                // Slowly rotate the entire universe for cinematic effect
+
+                scene.rotation.y += 0.001;
+
+                scene.rotation.z += 0.0005;
+
+
+
+                renderer.render(scene, camera);
+
+
+
+                // FPS Calc
+
+                let now = performance.now();
+
+                if (Math.random() < 0.05) {
+
+                    fpsCounter.innerText = Math.round(1000 / (now - lastTime));
+
+                }
+
+                lastTime = now;
+
+
+
+                requestAnimationFrame(animate);
+
+            }
+
+
+
+            initGalaxy();
+
+            animate();
+
+        };
+
+    </script>
+
+</body>
+
+</html>
