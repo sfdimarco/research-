@@ -1,0 +1,566 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TurboQuant 3D â QJL Cache Benchmark</title>
+    <style>
+        * { box-sizing: border-box; }
+        body { margin: 0; overflow: hidden; background: #000; color: #00ffcc; font-family: 'Courier New', monospace; }
+
+        /* ââ HUD panels ââ */
+        .panel {
+            position: absolute;
+            background: rgba(0, 8, 12, 0.90);
+            border: 1px solid #00ffcc33;
+            border-radius: 6px;
+            padding: 14px 18px;
+            box-shadow: 0 0 24px rgba(0, 255, 204, 0.08);
+        }
+        .panel-title {
+            font-size: 10px; letter-spacing: 3px; text-transform: uppercase;
+            color: #00ffcc88; margin: 0 0 12px 0;
+            border-bottom: 1px solid #00ffcc22; padding-bottom: 8px;
+        }
+        .row { display: flex; justify-content: space-between; align-items: center; margin: 5px 0; font-size: 12px; }
+        .lbl { color: #556677; }
+        .val { color: #fff; font-weight: bold; }
+        .val.cyan  { color: #00ffcc; }
+        .val.yel   { color: #ffcc00; }
+        .val.red   { color: #ff5555; }
+        .val.dim   { color: #445566; }
+        .divider   { border: none; border-top: 1px solid #00ffcc18; margin: 8px 0; }
+
+        /* ââ Mode badge ââ */
+        #mode-badge {
+            display: inline-block; padding: 3px 10px; border-radius: 3px;
+            font-size: 11px; font-weight: bold; letter-spacing: 1px; transition: all 0.15s;
+        }
+        .badge-cache { background: #00ffcc22; border: 1px solid #00ffcc; color: #00ffcc; }
+        .badge-qjl   { background: #ffcc0022; border: 1px solid #ffcc00; color: #ffcc00; }
+        .badge-exact { background: #ff555522; border: 1px solid #ff5555; color: #ff5555; }
+
+        /* ââ Right comparison table ââ */
+        #cmp-panel { top: 15px; right: 15px; min-width: 300px; }
+        .cmp-head { display: grid; grid-template-columns: 1fr 70px 70px 70px; font-size: 10px; color: #334455; margin-bottom: 4px; }
+        .cmp-head span:not(:first-child) { text-align: right; }
+        .cmp-row  { display: grid; grid-template-columns: 1fr 70px 70px 70px; font-size: 11px; margin: 3px 0; align-items: center; }
+        .cmp-row .metric { color: #556677; }
+        .cmp-row .v      { text-align: right; color: #aabbcc; }
+        .cmp-row .v.best { color: #00ffcc; font-weight: bold; }
+        .cmp-row .v.mid  { color: #ffcc00; }
+        .cmp-row .v.slow { color: #ff5555; }
+
+        /* ââ Graph ââ */
+        #graph-canvas { display: block; width: 100%; height: 64px; margin-top: 10px; border: 1px solid #00ffcc18; border-radius: 3px; }
+        .graph-legend { font-size: 9px; color: #334455; margin-top: 3px; letter-spacing: 1px; }
+
+        /* ââ Cache stats ââ */
+        #cache-panel { bottom: 15px; left: 15px; min-width: 240px; }
+
+        /* ââ Hint bar ââ */
+        #hint-bar {
+            position: absolute; bottom: 15px; right: 15px;
+            font-size: 10px; color: #334455; letter-spacing: 1px;
+            background: rgba(0,8,12,0.8); border: 1px solid #00ffcc18;
+            border-radius: 4px; padding: 8px 14px;
+        }
+
+        #loading { position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%); font-size: 18px; letter-spacing: 4px; }
+    </style>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+</head>
+<body>
+    <div id="loading">INITIALIZING UNIVERSE...</div>
+
+    <!-- Left: Live stats -->
+    <div class="panel" id="live-panel" style="top:15px;left:15px;min-width:270px;">
+        <p class="panel-title">// Live :: Frame Stats</p>
+        <div class="row"><span class="lbl">Mode</span><span id="mode-badge" class="badge-cache">QJL + CACHE</span></div>
+        <hr class="divider">
+        <div class="row"><span class="lbl">FPS</span><span class="val cyan" id="fps">â</span></div>
+        <div class="row"><span class="lbl">Force time (now)</span><span class="val" id="ft-now">â</span></div>
+        <div class="row"><span class="lbl">Force time (avg 60f)</span><span class="val" id="ft-avg">â</span></div>
+        <hr class="divider">
+        <div class="row"><span class="lbl">KE total</span><span class="val" id="ke">â</span></div>
+        <div class="row"><span class="lbl">KE drift</span><span class="val" id="ke-drift">â</span></div>
+    </div>
+
+    <!-- Cache stats panel -->
+    <div class="panel" id="cache-panel">
+        <p class="panel-title">// Cache Stats (QJL+Cache only)</p>
+        <div class="row"><span class="lbl">Hit rate (frame)</span><span class="val cyan" id="hit-rate">â</span></div>
+        <div class="row"><span class="lbl">Hits / Misses</span><span class="val" id="hit-miss">â</span></div>
+        <div class="row"><span class="lbl">Cache entries</span><span class="val" id="cache-size">â</span></div>
+        <div class="row"><span class="lbl">Saved computations</span><span class="val cyan" id="saved">â</span></div>
+    </div>
+
+    <!-- Right: 3-way comparison -->
+    <div class="panel" id="cmp-panel">
+        <p class="panel-title">// 3-Way Comparison (avg 60f)</p>
+        <div class="cmp-head">
+            <span>Metric</span>
+            <span style="color:#00ffcc">CACHE</span>
+            <span style="color:#ffcc00">QJL</span>
+            <span style="color:#ff5555">EXACT</span>
+        </div>
+        <hr class="divider">
+        <div class="cmp-row"><span class="metric">Force ms</span>  <span class="v" id="c-ft-cache">â</span><span class="v" id="c-ft-qjl">â</span><span class="v" id="c-ft-exact">â</span></div>
+        <div class="cmp-row"><span class="metric">vs Exact</span>  <span class="v" id="c-sp-cache">â</span><span class="v" id="c-sp-qjl">â</span><span class="v" id="c-sp-exact">â</span></div>
+        <div class="cmp-row"><span class="metric">KE drift %</span><span class="v" id="c-ke-cache">â</span><span class="v" id="c-ke-qjl">â</span><span class="v" id="c-ke-exact">â</span></div>
+        <hr class="divider">
+        <canvas id="graph-canvas"></canvas>
+        <div class="graph-legend">CYAN=Cache &nbsp; YEL=QJL &nbsp; RED=Exact &nbsp; (force ms, 200f)</div>
+    </div>
+
+    <!-- Hint -->
+    <div id="hint-bar">[ Q ] cycle mode &nbsp;|&nbsp; [ R ] reset stats</div>
+
+    <div id="canvas-container"></div>
+
+    <script>
+    window.onload = function () {
+        document.getElementById('loading').style.display = 'none';
+
+        // ââ CONSTANTS âââââââââââââââââââââââââââââââââââââââââââââââ
+        const NUM_PARTICLES  = 8000;
+        const STRIDE         = 7;           // [x,y,z,vx,vy,vz,mass]
+        const particles      = new Float32Array(NUM_PARTICLES * STRIDE);
+        const G              = 1.2;
+        const THETA          = 0.7;
+        const SOFTENING      = 50.0;
+        const TREE_BOUNDS    = 3000;
+        const QUANT_LEVEL    = 20.0;        // distance bin size
+        const QUANT_ANGLE    = 0.1;         // angular bin (radians)
+        const PHI_OFFSET     = 32;          // offset so negative phi buckets stay positive
+
+        // ââ MODES: 0=cache, 1=qjl, 2=exact âââââââââââââââââââââââââ
+        const MODE_CACHE = 0, MODE_QJL = 1, MODE_EXACT = 2;
+        let mode = MODE_CACHE;
+
+        // ââ THREE.JS ââââââââââââââââââââââââââââââââââââââââââââââââ
+        const container = document.getElementById('canvas-container');
+        const scene     = new THREE.Scene();
+        scene.fog = new THREE.FogExp2(0x000000, 0.0004);
+
+        const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 1, 10000);
+        camera.position.set(0, 400, 1000);
+        camera.lookAt(0, 0, 0);
+
+        const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance' });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        container.appendChild(renderer.domElement);
+
+        const geo  = new THREE.BufferGeometry();
+        const posArr = new Float32Array(NUM_PARTICLES * 3);
+        const colArr = new Float32Array(NUM_PARTICLES * 3);
+        geo.setAttribute('position', new THREE.BufferAttribute(posArr, 3));
+        geo.setAttribute('color',    new THREE.BufferAttribute(colArr, 3));
+        const mat = new THREE.PointsMaterial({ size: 3.0, vertexColors: true, blending: THREE.AdditiveBlending, transparent: true, opacity: 0.88, depthWrite: false });
+        scene.add(new THREE.Points(geo, mat));
+
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        // ââ OCTREE ââââââââââââââââââââââââââââââââââââââââââââââââââ
+        let nodeCounter = 0;
+        class OctNode {
+            constructor(x, y, z, size) {
+                this.id       = nodeCounter++;
+                this.x = x; this.y = y; this.z = z; this.size = size;
+                this.mass = 0; this.comX = 0; this.comY = 0; this.comZ = 0;
+                this.pIdx = -1; this.children = null;
+            }
+        }
+
+        const treeStack = new Array(1024);
+
+        function insert(node, pIdx, px, py, pz, pmass) {
+            const newMass = node.mass + pmass;
+            node.comX = (node.comX * node.mass + px * pmass) / newMass;
+            node.comY = (node.comY * node.mass + py * pmass) / newMass;
+            node.comZ = (node.comZ * node.mass + pz * pmass) / newMass;
+            node.mass = newMass;
+            if (!node.children && node.pIdx === -1) { node.pIdx = pIdx; return; }
+            if (!node.children) {
+                const hs = node.size / 2;
+                node.children = [
+                    new OctNode(node.x-hs, node.y-hs, node.z-hs, hs),
+                    new OctNode(node.x+hs, node.y-hs, node.z-hs, hs),
+                    new OctNode(node.x-hs, node.y+hs, node.z-hs, hs),
+                    new OctNode(node.x+hs, node.y+hs, node.z-hs, hs),
+                    new OctNode(node.x-hs, node.y-hs, node.z+hs, hs),
+                    new OctNode(node.x+hs, node.y-hs, node.z+hs, hs),
+                    new OctNode(node.x-hs, node.y+hs, node.z+hs, hs),
+                    new OctNode(node.x+hs, node.y+hs, node.z+hs, hs),
+                ];
+                const oIdx = node.pIdx; node.pIdx = -1;
+                let ox = particles[oIdx*STRIDE], oy = particles[oIdx*STRIDE+1], oz = particles[oIdx*STRIDE+2], om = particles[oIdx*STRIDE+6];
+                if (Math.abs(px-ox)<0.1 && Math.abs(py-oy)<0.1 && Math.abs(pz-oz)<0.1) {
+                    px += (Math.random()-0.5)*2; py += (Math.random()-0.5)*2; pz += (Math.random()-0.5)*2;
+                }
+                insertChild(node, oIdx, ox, oy, oz, om);
+            }
+            insertChild(node, pIdx, px, py, pz, pmass);
+        }
+        function insertChild(node, pIdx, px, py, pz, pmass) {
+            let idx = 0;
+            if (px >= node.x) idx |= 1;
+            if (py >= node.y) idx |= 2;
+            if (pz >= node.z) idx |= 4;
+            insert(node.children[idx], pIdx, px, py, pz, pmass);
+        }
+        function buildTree() {
+            nodeCounter = 0;
+            const root = new OctNode(0, 0, 0, TREE_BOUNDS);
+            for (let i = 0; i < NUM_PARTICLES; i++) {
+                const idx = i * STRIDE;
+                insert(root, i, particles[idx], particles[idx+1], particles[idx+2], particles[idx+6]);
+            }
+            return root;
+        }
+
+        // ââ FORCE CACHE âââââââââââââââââââââââââââââââââââââââââââââ
+        // Key: "${node.id}_${q_rad_bucket}_${q_theta_bucket}_${q_phi_bucket}"
+        // Value: {fx, fy, fz} â pre-computed, reused by any particle hitting the same bin
+        const forceCache = new Map();
+        let cacheHits = 0, cacheMisses = 0;
+
+        function cachedForce(node, dist, dx, dy, dz) {
+            // Quantize to integer buckets
+            let q_rb = Math.round(dist / QUANT_LEVEL);  if (q_rb === 0) q_rb = 1;
+            const theta  = Math.acos(Math.max(-1, Math.min(1, dz / dist)));
+            const phi    = Math.atan2(dy, dx);
+            const q_ti   = Math.round(theta / QUANT_ANGLE);
+            const q_pi   = Math.round(phi   / QUANT_ANGLE) + PHI_OFFSET;
+
+            // Fast string key â node.id is unique per frame
+            const key = node.id + '_' + q_rb + '_' + q_ti + '_' + q_pi;
+
+            let entry = forceCache.get(key);
+            if (entry !== undefined) {
+                cacheHits++;
+                return entry;
+            }
+
+            // MISS â compute and store
+            cacheMisses++;
+            const q_rad   = q_rb * QUANT_LEVEL;
+            const q_theta = q_ti * QUANT_ANGLE;
+            const q_phi   = (q_pi - PHI_OFFSET) * QUANT_ANGLE;
+            const force   = (G * node.mass) / (q_rad * q_rad);
+            const sinT    = Math.sin(q_theta);
+            entry = { fx: force * sinT * Math.cos(q_phi), fy: force * sinT * Math.sin(q_phi), fz: force * Math.cos(q_theta) };
+            forceCache.set(key, entry);
+            return entry;
+        }
+
+        // ââ THREE FORCE KERNELS ââââââââââââââââââââââââââââââââââââââ
+        function forcesCache(root) {
+            forceCache.clear();
+            cacheHits = 0; cacheMisses = 0;
+            for (let i = 0; i < NUM_PARTICLES; i++) {
+                const idx = i * STRIDE;
+                const px = particles[idx], py = particles[idx+1], pz = particles[idx+2];
+                let fx = 0, fy = 0, fz = 0, sp = 0;
+                treeStack[sp++] = root;
+                while (sp > 0) {
+                    const node = treeStack[--sp];
+                    const dx = node.comX-px, dy = node.comY-py, dz = node.comZ-pz;
+                    let distSq = dx*dx + dy*dy + dz*dz;
+                    if (distSq < SOFTENING) distSq = SOFTENING;
+                    const dist = Math.sqrt(distSq);
+                    if (node.size/dist < THETA || (!node.children && node.pIdx !== -1 && node.pIdx !== i)) {
+                        const f = cachedForce(node, dist, dx, dy, dz);
+                        fx += f.fx; fy += f.fy; fz += f.fz;
+                    } else if (node.children) {
+                        for (let c = 0; c < 8; c++) treeStack[sp++] = node.children[c];
+                    }
+                }
+                particles[idx+3] = (particles[idx+3] + fx) * 0.999;
+                particles[idx+4] = (particles[idx+4] + fy) * 0.999;
+                particles[idx+5] = (particles[idx+5] + fz) * 0.999;
+            }
+        }
+
+        function forcesQJL(root) {
+            for (let i = 0; i < NUM_PARTICLES; i++) {
+                const idx = i * STRIDE;
+                const px = particles[idx], py = particles[idx+1], pz = particles[idx+2];
+                let fx = 0, fy = 0, fz = 0, sp = 0;
+                treeStack[sp++] = root;
+                while (sp > 0) {
+                    const node = treeStack[--sp];
+                    const dx = node.comX-px, dy = node.comY-py, dz = node.comZ-pz;
+                    let distSq = dx*dx + dy*dy + dz*dz;
+                    if (distSq < SOFTENING) distSq = SOFTENING;
+                    const dist = Math.sqrt(distSq);
+                    if (node.size/dist < THETA || (!node.children && node.pIdx !== -1 && node.pIdx !== i)) {
+                        let q_rad = Math.round(dist / QUANT_LEVEL) * QUANT_LEVEL; if (q_rad === 0) q_rad = QUANT_LEVEL;
+                        const theta  = Math.acos(Math.max(-1, Math.min(1, dz / dist)));
+                        const phi    = Math.atan2(dy, dx);
+                        const qt     = Math.round(theta / QUANT_ANGLE) * QUANT_ANGLE;
+                        const qp     = Math.round(phi   / QUANT_ANGLE) * QUANT_ANGLE;
+                        const force  = (G * node.mass) / (q_rad * q_rad);
+                        const sinT   = Math.sin(qt);
+                        fx += force * sinT * Math.cos(qp);
+                        fy += force * sinT * Math.sin(qp);
+                        fz += force * Math.cos(qt);
+                    } else if (node.children) {
+                        for (let c = 0; c < 8; c++) treeStack[sp++] = node.children[c];
+                    }
+                }
+                particles[idx+3] = (particles[idx+3] + fx) * 0.999;
+                particles[idx+4] = (particles[idx+4] + fy) * 0.999;
+                particles[idx+5] = (particles[idx+5] + fz) * 0.999;
+            }
+        }
+
+        function forcesExact(root) {
+            for (let i = 0; i < NUM_PARTICLES; i++) {
+                const idx = i * STRIDE;
+                const px = particles[idx], py = particles[idx+1], pz = particles[idx+2];
+                let fx = 0, fy = 0, fz = 0, sp = 0;
+                treeStack[sp++] = root;
+                while (sp > 0) {
+                    const node = treeStack[--sp];
+                    const dx = node.comX-px, dy = node.comY-py, dz = node.comZ-pz;
+                    let distSq = dx*dx + dy*dy + dz*dz;
+                    if (distSq < SOFTENING) distSq = SOFTENING;
+                    const dist = Math.sqrt(distSq);
+                    if (node.size/dist < THETA || (!node.children && node.pIdx !== -1 && node.pIdx !== i)) {
+                        const force = (G * node.mass) / distSq;
+                        fx += force * (dx / dist);
+                        fy += force * (dy / dist);
+                        fz += force * (dz / dist);
+                    } else if (node.children) {
+                        for (let c = 0; c < 8; c++) treeStack[sp++] = node.children[c];
+                    }
+                }
+                particles[idx+3] = (particles[idx+3] + fx) * 0.999;
+                particles[idx+4] = (particles[idx+4] + fy) * 0.999;
+                particles[idx+5] = (particles[idx+5] + fz) * 0.999;
+            }
+        }
+
+        // ââ GALAXY INIT âââââââââââââââââââââââââââââââââââââââââââââ
+        function initGalaxy() {
+            for (let i = 0; i < NUM_PARTICLES; i++) {
+                const idx = i * STRIDE;
+                const r = (Math.random() ** 1.5) * 600 + 20;
+                const a = Math.random() * Math.PI * 2;
+                const v = Math.sqrt(300 / r) * 4;
+                particles[idx]   = Math.cos(a) * r;
+                particles[idx+1] = (Math.random()-0.5) * r * 0.2;
+                particles[idx+2] = Math.sin(a) * r;
+                particles[idx+3] = Math.cos(a + Math.PI/2) * v;
+                particles[idx+4] = (Math.random()-0.5) * 2;
+                particles[idx+5] = Math.sin(a + Math.PI/2) * v;
+                particles[idx+6] = Math.random() * 2.0 + 0.5;
+            }
+        }
+
+        // ââ METRICS âââââââââââââââââââââââââââââââââââââââââââââââââ
+        const HIST = 200, WIN = 60;
+        const modeKeys = ['cache', 'qjl', 'exact'];
+        const samples  = { cache: [], qjl: [], exact: [] };
+        const keSamp   = { cache: [], qjl: [], exact: [] };
+        const committed = { cache: null, qjl: null, exact: null };
+        const committedKE = { cache: null, qjl: null, exact: null };
+        const graph    = { cache: new Array(HIST).fill(null), qjl: new Array(HIST).fill(null), exact: new Array(HIST).fill(null) };
+        let baselineKE = null, frameCount = 0, lastT = performance.now();
+
+        function computeKE() {
+            let ke = 0;
+            for (let i = 0; i < NUM_PARTICLES; i++) {
+                const idx = i * STRIDE;
+                const vx = particles[idx+3], vy = particles[idx+4], vz = particles[idx+5];
+                ke += 0.5 * particles[idx+6] * (vx*vx + vy*vy + vz*vz);
+            }
+            return ke;
+        }
+        function avg(arr) { return arr.length ? arr.reduce((s,v)=>s+v,0)/arr.length : null; }
+        function last(arr, n) { return arr.slice(-n); }
+
+        // ââ GRAPH âââââââââââââââââââââââââââââââââââââââââââââââââââ
+        const gc  = document.getElementById('graph-canvas');
+        const gx  = gc.getContext('2d');
+        function drawGraph() {
+            const w = gc.offsetWidth, h = 64;
+            gc.width = w; gc.height = h;
+            gx.clearRect(0, 0, w, h);
+            let mx = 1;
+            ['cache','qjl','exact'].forEach(k => graph[k].forEach(v => { if (v && v > mx) mx = v; }));
+            mx *= 1.15;
+            function line(data, color) {
+                gx.beginPath(); gx.strokeStyle = color; gx.lineWidth = 1.5;
+                let first = true;
+                data.forEach((v,i) => {
+                    if (v === null) return;
+                    const x = (i/(HIST-1))*w, y = h - (v/mx)*(h-4) - 2;
+                    if (first) { gx.moveTo(x,y); first=false; } else gx.lineTo(x,y);
+                });
+                gx.stroke();
+            }
+            line(graph.exact, 'rgba(255,80,80,0.7)');
+            line(graph.qjl,   'rgba(255,200,0,0.7)');
+            line(graph.cache, 'rgba(0,255,180,0.8)');
+            gx.fillStyle='#334455'; gx.font='9px Courier New';
+            gx.fillText(mx.toFixed(1)+'ms', 2, 10);
+        }
+
+        // ââ HUD elements ââââââââââââââââââââââââââââââââââââââââââââ
+        const el = id => document.getElementById(id);
+        function colorClass(ms) { return ms < 8 ? 'cyan' : ms < 16 ? 'yel' : 'red'; }
+        function driftClass(d)  { return Math.abs(d||0) < 1 ? 'cyan' : Math.abs(d||0) < 5 ? 'yel' : 'red'; }
+
+        const BADGE_CFG = [
+            { cls:'badge-cache', label:'QJL + CACHE' },
+            { cls:'badge-qjl',   label:'QJL ONLY'   },
+            { cls:'badge-exact', label:'EXACT BH'    },
+        ];
+
+        function updateHUD(forceMs, fps, ke, keDrift, mk) {
+            const b = BADGE_CFG[mode];
+            el('mode-badge').className = 'badge ' + b.cls; // overwrite
+            el('mode-badge').classList.add(b.cls);
+            el('mode-badge').textContent = b.label;
+
+            el('fps').textContent = fps.toFixed(0);
+            el('fps').className   = 'val ' + colorClass(forceMs);
+
+            el('ft-now').textContent = forceMs.toFixed(2) + ' ms';
+            el('ft-now').className   = 'val ' + colorClass(forceMs);
+
+            const a = avg(last(samples[mk], WIN));
+            el('ft-avg').textContent = a !== null ? a.toFixed(2)+' ms' : 'â';
+            el('ft-avg').className   = 'val ' + (a ? colorClass(a) : '');
+
+            el('ke').textContent = (ke/1e6).toFixed(3) + ' M';
+            const ds = keDrift !== null ? (keDrift>=0?'+':'')+keDrift.toFixed(2)+'%' : 'â';
+            el('ke-drift').textContent = ds;
+            el('ke-drift').className   = 'val ' + (keDrift!==null ? driftClass(keDrift) : 'dim');
+
+            // Cache stats (only meaningful in cache mode)
+            const total = cacheHits + cacheMisses;
+            const hitPct = total > 0 ? (cacheHits/total*100).toFixed(1)+'%' : 'â';
+            el('hit-rate').textContent  = mode===MODE_CACHE ? hitPct : 'â';
+            el('hit-miss').textContent  = mode===MODE_CACHE ? cacheHits+' / '+cacheMisses : 'â';
+            el('cache-size').textContent= mode===MODE_CACHE ? forceCache.size : 'â';
+            el('saved').textContent     = mode===MODE_CACHE && total > 0
+                ? cacheHits + ' (' + (cacheHits/total*100).toFixed(0)+'% of interactions)' : 'â';
+
+            // 3-way table
+            function fillCol(suffix, k, isCache) {
+                const ft = committed[k];
+                const ke = committedKE[k];
+                const ftel = el('c-ft-'+suffix), spel = el('c-sp-'+suffix), keel = el('c-ke-'+suffix);
+
+                if (ft !== null) {
+                    ftel.textContent = ft.toFixed(2)+' ms';
+                    const exact = committed.exact;
+                    if (exact) {
+                        const sp = exact / ft;
+                        spel.textContent = sp.toFixed(2)+'x faster';
+                        spel.className = 'v ' + (sp >= 1.3 ? 'best' : sp >= 1.05 ? 'mid' : 'slow');
+                    } else { spel.textContent = 'â'; }
+                    // Color force time cell: best=cyan, mid=yel, slow=red
+                    const allFT = [committed.cache, committed.qjl, committed.exact].filter(Boolean);
+                    if (allFT.length === 3) {
+                        const minFT = Math.min(...allFT);
+                        ftel.className = 'v ' + (Math.abs(ft - minFT) < 0.5 ? 'best' : ft < committed.exact ? 'mid' : 'slow');
+                    } else { ftel.className = 'v'; }
+                } else { ftel.textContent='â'; ftel.className='v dim'; spel.textContent='â'; spel.className='v dim'; }
+
+                keel.textContent = ke !== null ? (ke>=0?'+':'')+ke.toFixed(2)+'%' : 'â';
+                keel.className   = 'v ' + (ke !== null ? driftClass(ke) : 'dim');
+            }
+            fillCol('cache','cache'); fillCol('qjl','qjl'); fillCol('exact','exact');
+            // Exact speedup vs itself = 1x (just show label)
+            if (committed.exact !== null) { el('c-sp-exact').textContent = '1.00x baseline'; el('c-sp-exact').className='v dim'; }
+        }
+
+        // ââ CONTROLS ââââââââââââââââââââââââââââââââââââââââââââââââ
+        window.addEventListener('keydown', e => {
+            if (e.key==='q'||e.key==='Q') {
+                mode = (mode + 1) % 3;
+                baselineKE = null; frameCount = 0;
+            }
+            if (e.key==='r'||e.key==='R') {
+                modeKeys.forEach(k => { samples[k].length=0; keSamp[k].length=0; committed[k]=null; committedKE[k]=null; graph[k].fill(null); });
+                baselineKE=null; frameCount=0;
+            }
+        });
+
+        // ââ RENDER LOOP âââââââââââââââââââââââââââââââââââââââââââââ
+        const pointCloud = scene.children[0];
+
+        function animate() {
+            const mk = modeKeys[mode];
+
+            // Build tree
+            const root = buildTree();
+
+            // Timed force pass
+            const t0 = performance.now();
+            if      (mode === MODE_CACHE) forcesCache(root);
+            else if (mode === MODE_QJL)   forcesQJL(root);
+            else                          forcesExact(root);
+            const forceMs = performance.now() - t0;
+
+            // KE + drift
+            const ke = computeKE();
+            if (baselineKE === null && frameCount > 0) baselineKE = ke;
+            const keDrift = baselineKE ? ((ke - baselineKE) / baselineKE) * 100 : null;
+
+            // Record
+            samples[mk].push(forceMs);
+            if (samples[mk].length > HIST) samples[mk].shift();
+            if (keDrift !== null) { keSamp[mk].push(keDrift); if (keSamp[mk].length > HIST) keSamp[mk].shift(); }
+            graph[mk].shift(); graph[mk].push(forceMs);
+
+            if (samples[mk].length >= WIN) committed[mk] = avg(last(samples[mk], WIN));
+            if (keSamp[mk].length  >= WIN) committedKE[mk] = avg(last(keSamp[mk], WIN));
+
+            // Sync WebGL
+            for (let i = 0; i < NUM_PARTICLES; i++) {
+                const sIdx = i*STRIDE, pIdx = i*3;
+                particles[sIdx]   += particles[sIdx+3];
+                particles[sIdx+1] += particles[sIdx+4];
+                particles[sIdx+2] += particles[sIdx+5];
+                posArr[pIdx]   = particles[sIdx];
+                posArr[pIdx+1] = particles[sIdx+1];
+                posArr[pIdx+2] = particles[sIdx+2];
+                const spSq = particles[sIdx+3]**2 + particles[sIdx+4]**2 + particles[sIdx+5]**2;
+                const heat = Math.min(1.0, spSq * 0.05);
+                colArr[pIdx]   = heat;
+                colArr[pIdx+1] = Math.max(0.2, 1.0 - heat);
+                colArr[pIdx+2] = 1.0;
+            }
+            geo.attributes.position.needsUpdate = true;
+            geo.attributes.color.needsUpdate    = true;
+
+            scene.rotation.y += 0.001;
+            scene.rotation.z += 0.0005;
+            renderer.render(scene, camera);
+
+            const now = performance.now();
+            const fps = 1000 / (now - lastT);
+            lastT = now;
+
+            updateHUD(forceMs, fps, ke, keDrift, mk);
+            drawGraph();
+            frameCount++;
+            requestAnimationFrame(animate);
+        }
+
+        initGalaxy();
+        animate();
+    };
+    </script>
+</body>
+</html>
