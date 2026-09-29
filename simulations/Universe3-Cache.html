@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>TurboQuant 3D â QJL Cache Benchmark</title>
+    <title>TurboQuant 3D â Quantized Cache Benchmark</title>
     <style>
         * { box-sizing: border-box; }
         body { margin: 0; overflow: hidden; background: #000; color: #00ffcc; font-family: 'Courier New', monospace; }
@@ -76,7 +76,7 @@
     <!-- Left: Live stats -->
     <div class="panel" id="live-panel" style="top:15px;left:15px;min-width:270px;">
         <p class="panel-title">// Live :: Frame Stats</p>
-        <div class="row"><span class="lbl">Mode</span><span id="mode-badge" class="badge-cache">QJL + CACHE</span></div>
+        <div class="row"><span class="lbl">Mode</span><span id="mode-badge" class="badge-cache">Quantized + CACHE</span></div>
         <hr class="divider">
         <div class="row"><span class="lbl">FPS</span><span class="val cyan" id="fps">â</span></div>
         <div class="row"><span class="lbl">Force time (now)</span><span class="val" id="ft-now">â</span></div>
@@ -88,7 +88,7 @@
 
     <!-- Cache stats panel -->
     <div class="panel" id="cache-panel">
-        <p class="panel-title">// Cache Stats (QJL+Cache only)</p>
+        <p class="panel-title">// Cache Stats (Quantized+Cache only)</p>
         <div class="row"><span class="lbl">Hit rate (frame)</span><span class="val cyan" id="hit-rate">â</span></div>
         <div class="row"><span class="lbl">Hits / Misses</span><span class="val" id="hit-miss">â</span></div>
         <div class="row"><span class="lbl">Cache entries</span><span class="val" id="cache-size">â</span></div>
@@ -101,7 +101,7 @@
         <div class="cmp-head">
             <span>Metric</span>
             <span style="color:#00ffcc">CACHE</span>
-            <span style="color:#ffcc00">QJL</span>
+            <span style="color:#ffcc00">Quantized</span>
             <span style="color:#ff5555">EXACT</span>
         </div>
         <hr class="divider">
@@ -110,7 +110,7 @@
         <div class="cmp-row"><span class="metric">KE drift %</span><span class="v" id="c-ke-cache">â</span><span class="v" id="c-ke-qjl">â</span><span class="v" id="c-ke-exact">â</span></div>
         <hr class="divider">
         <canvas id="graph-canvas"></canvas>
-        <div class="graph-legend">CYAN=Cache &nbsp; YEL=QJL &nbsp; RED=Exact &nbsp; (force ms, 200f)</div>
+        <div class="graph-legend">CYAN=Cache &nbsp; YEL=Quantized &nbsp; RED=Exact &nbsp; (force ms, 200f)</div>
     </div>
 
     <!-- Hint -->
@@ -419,8 +419,8 @@
         function driftClass(d)  { return Math.abs(d||0) < 1 ? 'cyan' : Math.abs(d||0) < 5 ? 'yel' : 'red'; }
 
         const BADGE_CFG = [
-            { cls:'badge-cache', label:'QJL + CACHE' },
-            { cls:'badge-qjl',   label:'QJL ONLY'   },
+            { cls:'badge-cache', label:'Quantized + CACHE' },
+            { cls:'badge-qjl',   label:'Quantized ONLY'   },
             { cls:'badge-exact', label:'EXACT BH'    },
         ];
 

@@ -93,10 +93,10 @@
 
     <!-- Left HUD: Live stats -->
     <div id="hud">
-        <p class="hud-title">// STCP Benchmark :: QJL v1</p>
+        <p class="hud-title">// STCP Benchmark :: Quantized v1</p>
 
         <div class="hud-row">
-            <span class="hud-label">QJL MODE</span>
+            <span class="hud-label">Quantized MODE</span>
             <span id="mode-badge" class="mode-on">ON</span>
         </div>
 
@@ -130,7 +130,7 @@
             <span class="hud-val" id="ke-drift">â</span>
         </div>
 
-        <p id="hint">[ Q ] toggle QJL &nbsp;|&nbsp; [ R ] reset stats</p>
+        <p id="hint">[ Q ] toggle Quantized &nbsp;|&nbsp; [ R ] reset stats</p>
     </div>
 
     <!-- Right panel: Comparison history -->
@@ -138,11 +138,11 @@
         <p class="bench-title">// Benchmark History</p>
 
         <div class="bench-row">
-            <span class="bench-lbl">QJL ON â avg force time</span>
+            <span class="bench-lbl">Quantized ON â avg force time</span>
             <span class="bench-stat highlight" id="hist-on">â</span>
         </div>
         <div class="bench-row">
-            <span class="bench-lbl">QJL OFF â avg force time</span>
+            <span class="bench-lbl">Quantized OFF â avg force time</span>
             <span class="bench-stat highlight" id="hist-off">â</span>
         </div>
         <div class="bench-row">
@@ -150,17 +150,17 @@
             <span class="bench-stat highlight" id="speedup">â</span>
         </div>
         <div class="bench-row">
-            <span class="bench-lbl">QJL ON â KE drift</span>
+            <span class="bench-lbl">Quantized ON â KE drift</span>
             <span class="bench-stat" id="hist-ke-on">â</span>
         </div>
         <div class="bench-row">
-            <span class="bench-lbl">QJL OFF â KE drift</span>
+            <span class="bench-lbl">Quantized OFF â KE drift</span>
             <span class="bench-stat" id="hist-ke-off">â</span>
         </div>
 
         <canvas id="graph-canvas"></canvas>
         <div style="font-size:9px; color:#334455; margin-top:4px; letter-spacing:1px;">
-            CYAN = QJL ON &nbsp; RED = QJL OFF &nbsp; (force ms, last 200 frames)
+            CYAN = Quantized ON &nbsp; RED = Quantized OFF &nbsp; (force ms, last 200 frames)
         </div>
     </div>
 
@@ -175,7 +175,7 @@
         const STRIDE = 7; // [x, y, z, vx, vy, vz, mass]
         const particles = new Float32Array(NUM_PARTICLES * STRIDE);
 
-        // QJL parameters
+        // Quantized parameters
         let QJL_ENABLED = true;
         const QUANT_LEVEL = 20.0;
         const QUANT_ANGLE = 0.1; // radians
@@ -282,7 +282,7 @@
                     return root;
                 },
 
-                // ââ FORCE WITH QJL (spherical quantization) ââââââââââ
+                // ââ FORCE WITH Quantized (spherical quantization) ââââââââââ
                 computeForcesQJL: (root) => {
                     for (let i = 0; i < NUM_PARTICLES; i++) {
                         let idx = i * STRIDE;
@@ -298,7 +298,7 @@
                             let dist = Math.sqrt(distSq);
 
                             if (node.size / dist < THETA || (!node.children && node.pIdx !== -1 && node.pIdx !== i)) {
-                                // QJL: quantize spherical coordinates
+                                // Quantized: quantize spherical coordinates
                                 let q_rad = Math.round(dist / QUANT_LEVEL) * QUANT_LEVEL || QUANT_LEVEL;
                                 let theta = Math.acos(Math.max(-1, Math.min(1, dz / dist)));
                                 let phi   = Math.atan2(dy, dx);
@@ -319,7 +319,7 @@
                     }
                 },
 
-                // ââ FORCE WITHOUT QJL (exact Cartesian direction) ââââ
+                // ââ FORCE WITHOUT Quantized (exact Cartesian direction) ââââ
                 computeForcesExact: (root) => {
                     for (let i = 0; i < NUM_PARTICLES; i++) {
                         let idx = i * STRIDE;
@@ -463,7 +463,7 @@
             const modeKey = QJL_ENABLED ? 'on' : 'off';
 
             // Mode badge
-            elMode.textContent = QJL_ENABLED ? 'QJL ON' : 'EXACT';
+            elMode.textContent = QJL_ENABLED ? 'Quantized ON' : 'EXACT';
             elMode.className   = QJL_ENABLED ? 'mode-on' : 'mode-off';
 
             // Live

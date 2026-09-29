@@ -44,7 +44,7 @@
 
         <p>Architecture: <span class="data">7-Stride Buffer + 3D Octree</span></p>
 
-        <p>Heuristic: <span class="data">Spherical QJL Quantization</span></p>
+        <p>Heuristic: <span class="data">Spherical Quantized Quantization</span></p>
 
         <p>Renderer: <span class="data">Three.js WebGL Instancing</span></p>
 
@@ -170,7 +170,7 @@
 
                 const SOFTENING = 50.0;
 
-                const QUANT_LEVEL = 20.0; // Bit-depth compression for radius (QJL Heuristic)
+                const QUANT_LEVEL = 20.0; // Bit-depth compression for radius (Quantized Heuristic)
 
                 const TREE_BOUNDS = 3000; // Bounds of our universe
 
@@ -376,7 +376,7 @@
 
                                     
 
-                                    // MOOK'S QJL HEURISTIC (Spherical Quantization for distant bodies)
+                                    // MOOK'S Quantized HEURISTIC (Spherical Quantization for distant bodies)
 
                                     if (node.size / dist < THETA) {
 

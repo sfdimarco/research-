@@ -2,7 +2,10 @@ __Spatial Tolerance Compression__
 
 A Unified Framework for Hierarchical Approximation,
 
-with the Quantized Joint Leverage \(QJL\) Second\-Order Heuristic
+with the Quantized Force Caching \(QFC\) Second\-Order Heuristic
+
+> **Naming note:** earlier versions called this technique *QJL*. It was renamed **Quantized Force Caching (QFC)** to avoid confusion with Quantized Johnson–Lindenstrauss, an unrelated method in machine-learning research.
+
 
 __Sean âMookâ DiMarco__
 
@@ -12,7 +15,7 @@ Independent Researcher  â  April 2026
 
 # __Abstract__
 
-We present the Spatial Tolerance Compression Principle \(STCP\), a unified framework identifying that recursive spatial subdivision with threshold\-based collapse is a single algorithm instantiated independently across multiple domains\. We show that quadtree\-based image compression \(the GEO format\) and the Barnes\-Hut N\-body force approximation are both instances of first\-order STCP\. We introduce the Quantized Joint Leverage \(QJL\) heuristic as a second\-order STCP application: after Barnes\-Hut identifies a mass cluster as sufficiently distant, QJL further quantizes the direction to that cluster in spherical coordinates, reducing unique force vector computations\. We derive an error bound showing QJL introduces at most ~14% additional relative error over standard Barnes\-Hut at the accepted threshold, and describe the implicit force vector memoization architecture that QJL enables\. A JavaScript prototype benchmarks all three paths at N=8,000 particles\. The cache achieves a 44\.9â45\.0% hit rate, validating the memoization prediction\. QJL alone is 5Ã slower than exact BH in JS due to trig\-vs\-division arithmetic cost; QJL\+Cache is 43Ã slower due to string key overhead\. Both effects are JS\-specific: a native implementation with integer hash maps is projected to realize a 1\.1â1\.3Ã speedup at N=8,000, scaling with particle density\.
+We present the Spatial Tolerance Compression Principle \(STCP\), a unified framework identifying that recursive spatial subdivision with threshold\-based collapse is a single algorithm instantiated independently across multiple domains\. We show that quadtree\-based image compression \(the GEO format\) and the Barnes\-Hut N\-body force approximation are both instances of first\-order STCP\. We introduce the Quantized Force Caching \(QFC\) heuristic as a second\-order STCP application: after Barnes\-Hut identifies a mass cluster as sufficiently distant, QFC further quantizes the direction to that cluster in spherical coordinates, reducing unique force vector computations\. We derive an error bound showing QFC introduces at most ~14% additional relative error over standard Barnes\-Hut at the accepted threshold, and describe the implicit force vector memoization architecture that QFC enables\. A JavaScript prototype benchmarks all three paths at N=8,000 particles\. The cache achieves a 44\.9â45\.0% hit rate, validating the memoization prediction\. QFC alone is 5Ã slower than exact BH in JS due to trig\-vs\-division arithmetic cost; QFC\+Cache is 43Ã slower due to string key overhead\. Both effects are JS\-specific: a native implementation with integer hash maps is projected to realize a 1\.1â1\.3Ã speedup at N=8,000, scaling with particle density\.
 
 # __1\. Introduction__
 
@@ -22,7 +25,7 @@ The GEO image compression format uses a binary quadtree to recursively subdivide
 
 The Barnes\-Hut algorithm \[Barnes & Hut, 1986\] uses an octree to recursively subdivide three\-dimensional space containing massive particles\. When the ratio of a cell's size to its distance from a target particle falls below a threshold Î¸, all mass within that cell is treated as concentrated at the center of mass\. Gravitational detail is discarded where the force contribution is below the threshold of physical consequence\.
 
-We call the underlying principle the Spatial Tolerance Compression Principle \(STCP\)\. Recognizing it as a single principle opens the door to a second\-order application: the Quantized Joint Leverage \(QJL\) heuristic, which applies STCP again on top of Barnes\-Hut, this time compressing the angular representation of the force direction itself\.
+We call the underlying principle the Spatial Tolerance Compression Principle \(STCP\)\. Recognizing it as a single principle opens the door to a second\-order application: the Quantized Force Caching \(QFC\) heuristic, which applies STCP again on top of Barnes\-Hut, this time compressing the angular representation of the force direction itself\.
 
 # __2\. The Spatial Tolerance Compression Principle__
 
@@ -46,7 +49,7 @@ The three components that vary across domains are: the tolerance function T\(R\)
 
 ## __2\.2 The Three Instances__
 
-The following table shows how GEO compression, Barnes\-Hut, and QJL each instantiate STCP:
+The following table shows how GEO compression, Barnes\-Hut, and QFC each instantiate STCP:
 
 __Domain__
 
@@ -78,7 +81,7 @@ Center of mass point
 
 First\-order
 
-QJL Heuristic
+QFC Heuristic
 
 Spherical bins \(angular\)
 
@@ -132,15 +135,15 @@ fy \+= force Ã \(dy / dist\)
 
 fz \+= force Ã \(dz / dist\)
 
-This is exact within the Barnes\-Hut approximation but computationally expensive: it requires a square root \(for dist\), three divisions, and three multiplications per accepted node\. QJL targets exactly this step\.
+This is exact within the Barnes\-Hut approximation but computationally expensive: it requires a square root \(for dist\), three divisions, and three multiplications per accepted node\. QFC targets exactly this step\.
 
-# __5\. QJL â Second\-Order STCP__
+# __5\. QFC â Second\-Order STCP__
 
 ## __5\.1 Motivation__
 
 Barnes\-Hut has already decided that the angular detail of a distant mass cluster is below the threshold of physical consequence \(the Î¸ criterion\)\. It then proceeds to compute the force direction at full floating\-point precision\. This is inconsistent: we accepted that the cluster is âfar enough away to approximateâ and then measured its direction to machine precision\.
 
-QJL applies the tolerance principle a second time, to the direction vector itself\. Once Barnes\-Hut fires for a given node, the direction from p to the nodeâs center of mass is converted to spherical coordinates \(Ï, Î¸, Ï\) and quantized to a coarse grid\.
+QFC applies the tolerance principle a second time, to the direction vector itself\. Once Barnes\-Hut fires for a given node, the direction from p to the nodeâs center of mass is converted to spherical coordinates \(Ï, Î¸, Ï\) and quantized to a coarse grid\.
 
 ## __5\.2 Implementation__
 
@@ -172,7 +175,7 @@ fy \+= force \* Math\.sin\(q\_theta\) \* Math\.sin\(q\_phi\);
 
 fz \+= force \* Math\.cos\(q\_theta\);
 
-## __5\.3 STCP Parameters for QJL__
+## __5\.3 STCP Parameters for QFC__
 
 - T\(direction\) = angular\_error\(quantized\) Ã distance, measuring positional error from rounding
 - Îµâ = quantization step Ã distance \(0\.1 rad Ã d at current settings\)
@@ -180,23 +183,23 @@ fz \+= force \* Math\.cos\(q\_theta\);
 
 ## __5\.4 Error Bound__
 
-We derive an upper bound on the additional angular error introduced by QJL relative to standard Barnes\-Hut\.
+We derive an upper bound on the additional angular error introduced by QFC relative to standard Barnes\-Hut\.
 
 Let d be the distance from particle p to a mass cluster, and ÎÎ± = 0\.1 radians be the angular quantization step\. The maximum positional displacement of the cluster due to angular rounding is:
 
 Îx\_pos = d Ã sin\(ÎÎ±\) â d Ã 0\.0998
 
-Since Barnes\-Hut with threshold Î¸ already accepts a positional uncertainty of up to d Ã sin\(arctan\(Î¸\)\) â d Ã Î¸ \(for small Î¸\), the additional relative error from QJL is:
+Since Barnes\-Hut with threshold Î¸ already accepts a positional uncertainty of up to d Ã sin\(arctan\(Î¸\)\) â d Ã Î¸ \(for small Î¸\), the additional relative error from QFC is:
 
 ÎÎµ\_rel = sin\(ÎÎ±\) / Î¸ = sin\(0\.1\) / 0\.7 â 0\.0998 / 0\.7 â 0\.143
 
-*At Î¸ = 0\.7 \(standard Barnes\-Hut setting\), QJL introduces at most 14\.3% additional relative error over the approximation already accepted by the Barnes\-Hut criterion\. Since force magnitude falls as 1/dÂ², this positional error produces a force error of order \(2 Ã 0\.0998\) â 20% of the Barnes\-Hut force error for that interaction\. Both errors are sub\-threshold by definition of Î¸\.*
+*At Î¸ = 0\.7 \(standard Barnes\-Hut setting\), QFC introduces at most 14\.3% additional relative error over the approximation already accepted by the Barnes\-Hut criterion\. Since force magnitude falls as 1/dÂ², this positional error produces a force error of order \(2 Ã 0\.0998\) â 20% of the Barnes\-Hut force error for that interaction\. Both errors are sub\-threshold by definition of Î¸\.*
 
 # __6\. The Implicit Force Vector Cache__
 
 ## __6\.1 The Memoization Opportunity__
 
-QJLâs quantization of \(distance, Î¸, Ï\) into discrete bins creates an opportunity that pure Barnes\-Hut cannot exploit: multiple particles at different positions may map to the same \(q\_rad, q\_theta, q\_phi\) bin when computing their interaction with the same distant cluster\.
+QFCâs quantization of \(distance, Î¸, Ï\) into discrete bins creates an opportunity that pure Barnes\-Hut cannot exploit: multiple particles at different positions may map to the same \(q\_rad, q\_theta, q\_phi\) bin when computing their interaction with the same distant cluster\.
 
 When this occurs, the force vectors are identical\. In the current implementation, they are computed and discarded independently for each particle\. An explicit cache pre\-computes each unique binâs force vector once per frame and shares it across all particles that land in that bin\.
 
@@ -254,11 +257,11 @@ Measured results at N=8,000 particles \(JavaScript prototype, QUANT\_LEVEL=20, �
 
 ## __7\.1 Barnes\-Hut \(1986\)__
 
-Barnes and Hut \[1986\] introduced the octree\-based O\(N log N\) N\-body algorithm that forms the basis of Instance 2\. The Î¸ criterion and center\-of\-mass approximation are their contribution\. QJL adds a second approximation stage applied after the Î¸ criterion fires\.
+Barnes and Hut \[1986\] introduced the octree\-based O\(N log N\) N\-body algorithm that forms the basis of Instance 2\. The Î¸ criterion and center\-of\-mass approximation are their contribution\. QFC adds a second approximation stage applied after the Î¸ criterion fires\.
 
 ## __7\.2 Fast Multipole Method \(Greengard & Rokhlin, 1987\)__
 
-The FMM achieves O\(N\) complexity by representing distant cluster interactions as multipole expansions in spherical harmonic basis functions\. This is mathematically distinct from QJL: FMM computes a Taylor series approximation to the potential field using more terms for better accuracy; QJL quantizes the interaction geometry to enable caching\. FMM trades computation for accuracy; QJL trades accuracy for reuse\.
+The FMM achieves O\(N\) complexity by representing distant cluster interactions as multipole expansions in spherical harmonic basis functions\. This is mathematically distinct from QFC: FMM computes a Taylor series approximation to the potential field using more terms for better accuracy; QFC quantizes the interaction geometry to enable caching\. FMM trades computation for accuracy; QFC trades accuracy for reuse\.
 
 ## __7\.3 Image Compression__
 
@@ -305,7 +308,7 @@ __31__
 
 N/A
 
-QJL only \(no cache\)
+QFC only \(no cache\)
 
 ~144 ms
 
@@ -315,7 +318,7 @@ QJL only \(no cache\)
 
 N/A
 
-QJL \+ explicit cache
+QFC \+ explicit cache
 
 ~1,243 ms
 
@@ -331,15 +334,15 @@ __44\.9â45\.0%__
 
 The 44\.9â45\.0% cache hit rate is the key result\. At N=8,000 particles and QUANT\_LEVEL=20, nearly half of all far\-field force interactions are shared across multiple particles mapping to the same \(q\_rad, q\_theta, q\_phi\) bin for the same distant cluster\. This directly confirms the memoization prediction in Section 6\.2\. The theoretical speedup from eliminating those redundant trig computations is real: ~537,000 interactions per frame are served from cache rather than computed fresh\.
 
-### __9\.2\.2 QJL Is Slower Than Exact in JavaScript__
+### __9\.2\.2 QFC Is Slower Than Exact in JavaScript__
 
-Counterintuitively, QJL alone is 5Ã slower than exact Barnes\-Hut in this JS prototype\. The reason is arithmetic cost: exact Barnes\-Hut uses three divisions \(dx/dist, dy/dist, dz/dist\) to compute the force direction, while QJL replaces these with acos \+ atan2 \+ three rounding operations \+ sin \+ two cos calls\. In x86 hardware, trigonometric functions are 20â50Ã more expensive than division\. QJL adds trig where exact BH uses only division\.
+Counterintuitively, QFC alone is 5Ã slower than exact Barnes\-Hut in this JS prototype\. The reason is arithmetic cost: exact Barnes\-Hut uses three divisions \(dx/dist, dy/dist, dz/dist\) to compute the force direction, while QFC replaces these with acos \+ atan2 \+ three rounding operations \+ sin \+ two cos calls\. In x86 hardware, trigonometric functions are 20â50Ã more expensive than division\. QFC adds trig where exact BH uses only division\.
 
-*The QJL speedup was designed to emerge from the cache, not from the quantization step itself\. Without the cache, QJL is strictly more expensive\. The cache is not an optimization of QJL â it IS the optimization\. QJL is the key that makes the cache possible\.*
+*The QFC speedup was designed to emerge from the cache, not from the quantization step itself\. Without the cache, QFC is strictly more expensive\. The cache is not an optimization of QFC â it IS the optimization\. QFC is the key that makes the cache possible\.*
 
 ### __9\.2\.3 Cache Overhead Dominates in JavaScript__
 
-QJL\+Cache is 43Ã slower than Exact\. The overhead is JS Map key creation: each of the ~1\.2 million accepted interactions per frame requires string concatenation to form the cache key \(node\.id \+ '\_' \+ q\_rad \+ '\\_' \+ q\_theta \+ '\_' \+ q\_phi\), followed by Map\.get\(\) and potentially Map\.set\(\)\. String allocation and hashing in V8 is sufficiently expensive to negate the 45% trig savings completely\.
+QFC\+Cache is 43Ã slower than Exact\. The overhead is JS Map key creation: each of the ~1\.2 million accepted interactions per frame requires string concatenation to form the cache key \(node\.id \+ '\_' \+ q\_rad \+ '\\_' \+ q\_theta \+ '\_' \+ q\_phi\), followed by Map\.get\(\) and potentially Map\.set\(\)\. String allocation and hashing in V8 is sufficiently expensive to negate the 45% trig savings completely\.
 
 ## __9\.3 Native Implementation Projection__
 
